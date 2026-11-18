@@ -5,6 +5,8 @@ import java.awt.geom.Line2D;
 import java.util.*;
 import java.util.List;
 import javax.swing.*;
+import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.DefaultTableModel;
 
 public class DijkstraGUI extends JFrame {
     static final long INF = Long.MAX_VALUE;
@@ -14,6 +16,12 @@ public class DijkstraGUI extends JFrame {
     private final JCheckBox directedBox = new JCheckBox("Directed graph");
     private final JTextArea edgesArea = new JTextArea("1 2 10\n1 3 3\n2 3 1\n2 4 2\n3 4 2\n3 5 5", 8, 18);
     private final JTextArea outputArea = new JTextArea();
+    private final DefaultTableModel tableModel = new DefaultTableModel(
+            new String[]{"Node", "Shortest Distance", "Previous Node"}, 0) {
+        @Override
+        public boolean isCellEditable(int row, int column) { return false; }
+    };
+    private final JTable resultTable = new JTable(tableModel);
     private final GraphPanel graphPanel = new GraphPanel();
     private int sampleIndex = 0;
 
@@ -39,8 +47,8 @@ public class DijkstraGUI extends JFrame {
     static class Graph {
         int n, source, ignoredLoops;
         boolean directed;
-        final List<Edge> edges = new ArrayList<>();           
-        final List<List<Edge>> adj = new ArrayList<>();        
+        final List<Edge> edges = new ArrayList<>();
+        final List<List<Edge>> adj = new ArrayList<>();
     }
 
     static class Result {
@@ -88,8 +96,19 @@ public class DijkstraGUI extends JFrame {
 
         JPanel visual = titled("Graph Visualization", new BorderLayout());
         visual.add(graphPanel, BorderLayout.CENTER);
+
+        DefaultTableCellRenderer center = new DefaultTableCellRenderer();
+        center.setHorizontalAlignment(SwingConstants.CENTER);
+        resultTable.setDefaultRenderer(Object.class, center);
+        resultTable.setRowHeight(22);
+        resultTable.getTableHeader().setReorderingAllowed(false);
+
+        JSplitPane resultSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT,
+                new JScrollPane(resultTable), new JScrollPane(outputArea));
+        resultSplit.setResizeWeight(0.4);
+
         JPanel results = titled("Algorithm Steps and Results", new BorderLayout());
-        results.add(new JScrollPane(outputArea), BorderLayout.CENTER);
+        results.add(resultSplit, BorderLayout.CENTER);
 
         JSplitPane right = new JSplitPane(JSplitPane.VERTICAL_SPLIT, visual, results);
         right.setResizeWeight(0.55);
@@ -101,6 +120,7 @@ public class DijkstraGUI extends JFrame {
         sample.addActionListener(e -> loadSample());
         clear.addActionListener(e -> clearResults());
     }
+
     private void loadSample() {
         String[] s = SAMPLES[sampleIndex];
         sampleIndex = (sampleIndex + 1) % SAMPLES.length;
@@ -115,6 +135,7 @@ public class DijkstraGUI extends JFrame {
 
     private void clearResults() {
         outputArea.setText("");
+        tableModel.setRowCount(0);
         graphPanel.setGraph(null, null, null);
     }
 
@@ -124,11 +145,23 @@ public class DijkstraGUI extends JFrame {
             Result r = solve(g);
             outputArea.setText(r.log);
             outputArea.setCaretPosition(0);
+            fillTable(r);
             graphPanel.setGraph(g, r.prev, r.dist);
         } catch (IllegalArgumentException ex) {
             showError(ex.getMessage());
         } catch (OutOfMemoryError ex) {
             showError("This graph is too large for the available memory.");
+        }
+    }
+
+    private void fillTable(Result r) {
+        tableModel.setRowCount(0);
+        for (int i = 0; i < r.dist.length; i++) {
+            tableModel.addRow(new Object[]{
+                    "V" + (i + 1),
+                    fmt(r.dist[i]),
+                    r.prev[i] == -1 ? "-" : "V" + (r.prev[i] + 1)
+            });
         }
     }
 
@@ -151,13 +184,13 @@ public class DijkstraGUI extends JFrame {
     }
 
     static Graph parse(String vertexText, String sourceText, String edgeText, boolean directed) {
-        List<int[]> raw = new ArrayList<>();        
+        List<int[]> raw = new ArrayList<>();
         List<Long> weights = new ArrayList<>();
         int maxVertex = 0;
 
         String[] lines = edgeText.split("\\R");
         for (int i = 0; i < lines.length; i++) {
-            String line = lines[i].split("#", 2)[0].replace(',', ' ').trim();    
+            String line = lines[i].split("#", 2)[0].replace(',', ' ').trim();
             if (line.isEmpty()) continue;
             String where = "Line " + (i + 1) + ": ";
             String[] p = line.split("\\s+");
@@ -179,7 +212,7 @@ public class DijkstraGUI extends JFrame {
         if (source < 1) throw new IllegalArgumentException("The starting vertex must be 1 or higher.");
 
         String vt = vertexText.trim();
-        int n = vt.isEmpty() ? Math.max(1, Math.max(maxVertex, source))            
+        int n = vt.isEmpty() ? Math.max(1, Math.max(maxVertex, source))
                 : toInt(vt, "The number of vertices must be a whole number (or leave it blank).");
         if (n < 1) throw new IllegalArgumentException("The graph needs at least 1 vertex.");
         if (source > n) throw new IllegalArgumentException("The starting vertex " + source + " is outside the graph (1 to " + n + ").");
@@ -193,7 +226,7 @@ public class DijkstraGUI extends JFrame {
             int[] e = raw.get(i);
             if (e[0] > n || e[1] > n)
                 throw new IllegalArgumentException("Line " + e[2] + ": vertex " + Math.max(e[0], e[1]) + " is outside the graph (1 to " + n + ").");
-            if (e[0] == e[1]) {                                  // a self-loop never shortens a path
+            if (e[0] == e[1]) {
                 g.ignoredLoops++;
                 continue;
             }
@@ -226,7 +259,7 @@ public class DijkstraGUI extends JFrame {
         log.append("Starting vertex: ").append(g.source + 1).append("\n")
                 .append("Initial distance: 0 for source; infinity for others.\n\n");
 
-        PriorityQueue<long[]> queue = new PriorityQueue<>((a, b) -> Long.compare(a[0], b[0]));   
+        PriorityQueue<long[]> queue = new PriorityQueue<>((a, b) -> Long.compare(a[0], b[0]));
         dist[g.source] = 0;
         queue.add(new long[]{0, g.source});
 
@@ -234,7 +267,7 @@ public class DijkstraGUI extends JFrame {
         while (!queue.isEmpty()) {
             long[] cur = queue.poll();
             int u = (int) cur[1];
-            if (done[u] || cur[0] != dist[u]) continue;                
+            if (done[u] || cur[0] != dist[u]) continue;
             done[u] = true;
             log.append("Step ").append(step++).append(": Visit vertex ").append(u + 1)
                     .append(" (distance ").append(dist[u]).append(")\n");
@@ -277,7 +310,7 @@ public class DijkstraGUI extends JFrame {
 
 
     private static class GraphPanel extends JPanel {
-        private static final int BOTTOM = 34;                        
+        private static final int BOTTOM = 34;
         private static final Color TREE = new Color(220, 55, 55), EDGE = new Color(150, 155, 165);
         private static final Color START = new Color(55, 160, 95), VERTEX = new Color(65, 125, 210);
 
@@ -285,7 +318,7 @@ public class DijkstraGUI extends JFrame {
         private int[] previous;
         private long[] distance;
         private final Set<Long> edgeKeys = new HashSet<>();
-        private double[] nx, ny;                                      
+        private double[] nx, ny;
         private int dragged = -1;
         private double dragDx, dragDy;
 
@@ -299,10 +332,10 @@ public class DijkstraGUI extends JFrame {
                     int hit = vertexAt(e.getX(), e.getY());
                     if (hit >= 0) {
                         dragged = hit;
-                        dragDx = nx[hit] * getWidth() - e.getX();     
+                        dragDx = nx[hit] * getWidth() - e.getX();
                         dragDy = ny[hit] * getHeight() - e.getY();
                     } else if (e.getClickCount() == 2) {
-                        nx = null;                                    
+                        nx = null;
                         ny = null;
                     }
                     hover(e);
@@ -340,7 +373,7 @@ public class DijkstraGUI extends JFrame {
             this.graph = graph;
             this.previous = previous == null ? null : previous.clone();
             this.distance = distance == null ? null : distance.clone();
-            if (graph == null || (nx != null && nx.length != graph.n)) nx = ny = null;  
+            if (graph == null || (nx != null && nx.length != graph.n)) nx = ny = null;
             edgeKeys.clear();
             if (graph != null) for (Edge e : graph.edges) edgeKeys.add((long) e.from * graph.n + e.to);
             setCursor(Cursor.getDefaultCursor());
@@ -356,7 +389,7 @@ public class DijkstraGUI extends JFrame {
             return Math.max(40, Math.min(getWidth(), getHeight() - BOTTOM) / 2.0 - 55);
         }
 
-       
+
         private int nodeSize() {
             return graph.n == 1 ? 42 : (int) Math.max(8, Math.min(42, 2 * Math.PI * radius() / graph.n * 0.7));
         }
@@ -423,7 +456,7 @@ public class DijkstraGUI extends JFrame {
                 int left = (int) (x[i] - size / 2.0), top = (int) (y[i] - size / 2.0);
                 g2.setColor(i == graph.source ? START : VERTEX);
                 g2.fillOval(left, top, size, size);
-                if (i == dragged) {                                  
+                if (i == dragged) {
                     g2.setColor(new Color(15, 23, 42));
                     g2.setStroke(new BasicStroke(2f));
                     g2.drawOval(left, top, size, size);
